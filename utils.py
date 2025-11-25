@@ -1,15 +1,24 @@
 # astrbot_tower/utils.py
 
-import os
-import json
-import re
-import base64
 import asyncio
+import base64
+import json
+import os
+import re
+
 import httpx
 from playwright.async_api import async_playwright
 
 from astrbot.api import logger
-from .config import ELEMENT_MAP, KEYWORD_STYLES, TRANSPARENT_PIXEL_BASE64, CACHE_DIR, INDEX_FILE
+
+from .config import (
+    CACHE_DIR,
+    ELEMENT_MAP,
+    INDEX_FILE,
+    KEYWORD_STYLES,
+    TRANSPARENT_PIXEL_BASE64,
+)
+
 
 class ImageDownloadError(Exception): pass
 
@@ -17,7 +26,7 @@ async def fetch_image_as_base64(http_client: httpx.AsyncClient, url: str) -> str
     """下载图片并转为Base64，增加了重试机制。"""
     if not url:
         raise ImageDownloadError("URL为空")
-    
+
     last_exception = None
     for attempt in range(3):  # 总共尝试3次
         try:
@@ -40,26 +49,26 @@ async def local_render_html(html_content: str, number: int):
         browser = await p.chromium.launch()
         page = await browser.new_page(device_scale_factor=2)
         await page.set_content(html_content)
-        locator = page.locator('.main-container')
-        await locator.screenshot(path=output_path, type='png')
+        locator = page.locator(".main-container")
+        await locator.screenshot(path=output_path, type="png")
         await browser.close()
 
 async def load_index_data(index_lock: asyncio.Lock) -> dict:
     """线程安全地加载索引文件。"""
     async with index_lock:
         try:
-            with open(INDEX_FILE, 'r', encoding='utf-8') as f:
+            with open(INDEX_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
 
 def clean_and_highlight(desc: str) -> str:
     """清理并高亮描述文本中的关键词。"""
-    cleaned_desc = re.sub(r'</?color.*?>', '', desc)
+    cleaned_desc = re.sub(r"</?color.*?>", "", desc)
     for keyword, styled in KEYWORD_STYLES.items():
         cleaned_desc = cleaned_desc.replace(keyword, styled)
     effect_color = "#f7ca2f"
-    cleaned_desc = re.sub(r'(【.*?效应】)', f'<strong style="color: {effect_color};">\\1</strong>', cleaned_desc)
+    cleaned_desc = re.sub(r"(【.*?效应】)", f'<strong style="color: {effect_color};">\\1</strong>', cleaned_desc)
     return cleaned_desc
 
 async def process_monsters(http_client: httpx.AsyncClient, monsters_obj: dict) -> list:
@@ -71,15 +80,15 @@ async def process_monsters(http_client: httpx.AsyncClient, monsters_obj: dict) -
     for monster_data in monsters_obj.values():
         element_id = monster_data.get("Element")
         element_info = ELEMENT_MAP.get(element_id, ELEMENT_MAP[7])
-        
+
         json_icon_path = monster_data.get("Icon", "")
         base_filename = ""
         if json_icon_path:
-            filename_part = json_icon_path.split('/')[-1]
-            base_filename = filename_part.split('.')[0]
-        
+            filename_part = json_icon_path.split("/")[-1]
+            base_filename = filename_part.split(".")[0]
+
         full_icon_url = f"https://api.hakush.in/ww/UI/UIResources/Common/Image/IconMonsterHead/{base_filename}.webp"
-        
+
         monster_details.append({
             "name": monster_data.get("Name"),
             "icon_url": full_icon_url,
@@ -89,7 +98,7 @@ async def process_monsters(http_client: httpx.AsyncClient, monsters_obj: dict) -
         })
 
     unique_urls = {m[key] for m in monster_details for key in ("icon_url", "element_icon_url") if m.get(key)}
-    
+
     tasks = {url: fetch_image_as_base64(http_client, url) for url in unique_urls}
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)
     url_to_base64_map = {url: res for url, res in zip(tasks.keys(), results) if not isinstance(res, Exception)}

@@ -1,23 +1,21 @@
 # main.py
 
-import httpx
-import json
-import re
-import base64
 import asyncio
-import os
 import hashlib
-from datetime import datetime, timezone,timedelta
+import json
+import os
+from datetime import datetime, timedelta, timezone
+
+import httpx
 from jinja2 import Template
-from playwright.async_api import async_playwright
 
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star, register
 
+from .config import *
 from .html_template import HTML_TEMPLATE
-from .config import * 
-from .utils import * 
+from .utils import *
 
 
 @register(PLUGIN_NAME, "TimeXingjian", "查询鸣潮境深塔信息并生成图片", "1.0.6")
@@ -29,7 +27,7 @@ class ShentaScreenshotPlugin(Star):
         os.makedirs(PLUGIN_DATA_DIR, exist_ok=True)
         os.makedirs(CACHE_DIR, exist_ok=True)
         if not os.path.exists(INDEX_FILE):
-            with open(INDEX_FILE, 'w') as f: json.dump({}, f)
+            with open(INDEX_FILE, "w") as f: json.dump({}, f)
         asyncio.create_task(self._periodic_update_task())
         logger.info(f"{PLUGIN_NAME} 插件已加载 (v11.0.6 - 标题显示时间范围)，后台更新任务已启动。")
 
@@ -43,7 +41,7 @@ class ShentaScreenshotPlugin(Star):
         logger.info("开始更新深塔索引...")
         async with self.index_lock:
             try:
-                with open(INDEX_FILE, 'r', encoding='utf-8') as f: index_data = json.load(f)
+                with open(INDEX_FILE, encoding="utf-8") as f: index_data = json.load(f)
             except (json.JSONDecodeError, FileNotFoundError): index_data = {}
             latest_id = max([int(k) for k in index_data.keys()] or [0])
             start_scan_id = max(MIN_TOWER_ID_PROBE, latest_id + 1 if latest_id > 0 else MIN_TOWER_ID_PROBE)
@@ -65,17 +63,17 @@ class ShentaScreenshotPlugin(Star):
                     index_data[str(i)] = {"begin": begin_date, "end": end_date, "hash": new_hash}
                 except httpx.HTTPStatusError: break
                 except Exception as e: logger.warning(f"处理第 {i} 期数据时出错: {e}")
-            with open(INDEX_FILE, 'w', encoding='utf-8') as f: json.dump(index_data, f, ensure_ascii=False, indent=4)
+            with open(INDEX_FILE, "w", encoding="utf-8") as f: json.dump(index_data, f, ensure_ascii=False, indent=4)
         logger.info("深塔索引更新完成。")
 
     def get_period_id(self, term: str) -> int | None:
         """
         正确处理更新日当天新旧周期并存的问题。
         """
-        logger.info(f"--- get_period_id 开始执行 (最终修复版) ---")
+        logger.info("--- get_period_id 开始执行 (最终修复版) ---")
         logger.info(f"接收到的查询参数 term: '{term}'")
         try:
-            with open(INDEX_FILE, 'r', encoding='utf-8') as f: index_data = json.load(f)
+            with open(INDEX_FILE, encoding="utf-8") as f: index_data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             logger.error("深塔索引文件读取失败或不存在。")
             return None
@@ -136,19 +134,19 @@ class ShentaScreenshotPlugin(Star):
             except (ValueError, TypeError):
                 final_target_id = current_id_base
                 logger.warning(f"无法解析的查询参数 '{term}'，将默认返回当期ID: {final_target_id}")
-        
+
         return final_target_id
 
     @filter.command("深塔", alias={"深渊"})
     async def shenta_info(self, event: AstrMessageEvent, period: str = "当期"):
-        
+
         target_id = self.get_period_id(period)
-        
+
         if target_id is None:
             logger.error(f"无法获取到有效的目标ID (输入参数: '{period}')，流程中止。")
             await event.send(event.plain_result(f"无法计算“{period}”对应的期数，请检查索引文件或后台日志。"))
             return
-            
+
         index_data = await load_index_data(self.index_lock)
         if str(target_id) not in index_data:
             logger.warning(f"目标ID {target_id} 在索引文件中不存在。")
@@ -161,9 +159,9 @@ class ShentaScreenshotPlugin(Star):
             logger.info(f"✅ 命中缓存！直接发送图片: {cache_path}")
             yield event.image_result(cache_path)
             return
-        
-        logger.info(f"❌ 未命中缓存，开始生成新图片...")
-        
+
+        logger.info("❌ 未命中缓存，开始生成新图片...")
+
         # 获取深塔时间范围
         tower_dates_str = None
         if str(target_id) in index_data:
@@ -187,7 +185,7 @@ class ShentaScreenshotPlugin(Star):
                 tasks.append(process_area_2(self.http_client, all_areas["2"].get("Floor", {})))
             if "3" in all_areas and (floor_4_data := all_areas["3"].get("Floor", {}).get("4")):
                 tasks.append(process_area_3(self.http_client, floor_4_data))
-            
+
             processed_towers = await asyncio.gather(*tasks)
             all_image_urls_to_fetch = { el["icon"] for el in ELEMENT_MAP.values() }
             all_image_urls_to_fetch.add(BUFF_ICON_URL)
@@ -204,7 +202,7 @@ class ShentaScreenshotPlugin(Star):
                 for group in tower["groups"]:
                     for element in group["recommended_elements"]:
                         element["icon_base64"] = base64_map.get(element["icon"], TRANSPARENT_PIXEL_BASE64)
-            
+
             template_data = {
                 "tower_id": target_id,
                 "towers": [t for t in processed_towers if t],
@@ -274,7 +272,7 @@ class ShentaScreenshotPlugin(Star):
 
         except Exception as e:
             logger.error(f"清除深塔缓存时发生错误: {e}")
-            await event.send(event.plain_result(f"清除缓存时发生错误，请检查后台日志。"))
+            await event.send(event.plain_result("清除缓存时发生错误，请检查后台日志。"))
 
     @filter.command("深塔帮助")
     async def shenta_help(self, event: AstrMessageEvent):
